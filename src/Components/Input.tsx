@@ -45,6 +45,8 @@ const Input: React.FC = () => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const [isAborted, setIsAborted] = useState<boolean>(false);
   const [innerIndex, setInnerIndex] = useState<number>(0);
+  const [indexSuccess, setIndexSuccess] = useState<number[]>([]);
+  const [indexFailed, setIndexFailed] = useState<number[]>([]);
 
   const failedDataChecked = (): ExcelData[] => {
     return data.filter((item) => {
@@ -67,6 +69,7 @@ const Input: React.FC = () => {
     setIsLoading(true);
     setCountProcess(0);
     setIsAborted(false);
+    setInnerIndex(0);
 
     const file = event.target.files?.[0];
     if (file) {
@@ -80,6 +83,9 @@ const Input: React.FC = () => {
 
         setData(jsonData);
         console.log("jsonData :", jsonData);
+        const inResult: Place[] = [];
+        const inSuccess: number[] = [];
+        const inFailed: number[] = [];
 
         for (const [index, item] of jsonData.entries()) {
           try {
@@ -96,15 +102,55 @@ const Input: React.FC = () => {
               setCountProcess((prevCount) => prevCount + 1);
               window.ipcRenderer.once("scraping-done", (event, result) => {
                 console.log(`Item ${index} processed:`, result);
-                setNewData((prevData) => [...prevData, result]);
+                console.log("Result newData: ", inResult);
+                inSuccess.push(...inSuccess, index);
+
+                // Ambil elemen terakhir dari inResult
+                const lastItem = inResult[inResult.length - 1];
+
+                // Cek apakah result berbeda dengan elemen terakhir di inResult
+                const isDifferent =
+                  !lastItem ||
+                  (lastItem.start !== result.start &&
+                    lastItem.finish !== result.finish &&
+                    lastItem.coordStart !== result.coordStart &&
+                    lastItem.coordFinish !== result.coordFinish &&
+                    lastItem.nameStart !== result.nameStart &&
+                    lastItem.nameFinish !== result.nameFinish &&
+                    lastItem.carDistance.distance !==
+                      result.carDistance.distance &&
+                    lastItem.motorDistance.distance !==
+                      result.motorDistance.distance &&
+                    lastItem.carDistance.duration !==
+                      result.carDistance.duration &&
+                    lastItem.motorDistance.duration !==
+                      result.motorDistance.duration);
+
+                // Jika berbeda, tambahkan result ke inResult
+                if (isDifferent) {
+                  console.log("Memasukkan data baru");
+                  inResult.push(result);
+                  setNewData((prevData) => [...prevData, result]);
+                  setInnerIndex((prevIndex) => prevIndex + 1);
+                  setIndexSuccess((prevIndex) => [
+                    ...prevIndex,
+                    inSuccess[inSuccess.length - 1],
+                  ]);
+                }
+
                 console.log(event);
-                setInnerIndex((prevIndex) => prevIndex + 1);
                 resolve();
               });
 
               window.ipcRenderer.once("scraping-error", (event, error) => {
                 console.error(`Error processing item ${index}:`, error);
+                setInnerIndex((prevIndex) => prevIndex + 1);
                 console.log(event);
+                inFailed.push(...inFailed, index);
+                setIndexFailed((prevIndex) => [
+                  ...prevIndex,
+                  inFailed[inFailed.length - 1],
+                ]);
                 reject(error);
               });
 
@@ -119,11 +165,16 @@ const Input: React.FC = () => {
             console.log("newData Loop :", newData);
           } catch (error) {
             console.error(`Error processing item ${index}:`, error);
+          } finally {
+            event.target.value = "";
           }
         }
 
+        inResult.length = 0;
+
         console.log("newData Final:", newData);
         setIsLoading(false);
+        failedDataChecked();
       };
       reader.readAsBinaryString(file);
     }
@@ -139,6 +190,10 @@ const Input: React.FC = () => {
       console.log("SELESAI");
       setIsLoading(false);
       setIsAborted(false);
+      const failed: ExcelData[] = failedDataChecked();
+      setDataFail(failed);
+    }
+    if (!isLoading) {
       const failed: ExcelData[] = failedDataChecked();
       setDataFail(failed);
     }
@@ -211,6 +266,9 @@ const Input: React.FC = () => {
     window.location.reload();
   };
 
+  console.log("indexSuccess: ", indexSuccess);
+  console.log("indexFailed: ", indexFailed);
+
   return (
     <div
       className={`min-h-screen flex flex-col items-center ${
@@ -225,26 +283,28 @@ const Input: React.FC = () => {
         Google Map Data Scrapper
       </div>
       <div className="flex gap-4">
-        <label
-          className={`flex items-center gap-2 text-white ${
-            isLoading
-              ? "font-normal bg-slate-600"
-              : "font-semibold cursor-pointer bg-blue-700 hover:bg-blue-900"
-          } py-2 px-4 rounded`}
-          htmlFor="addData"
-        >
-          {isLoading ? (
-            <>
-              <div className="animate-spin rounded-full h-6 w-6 border-4 border-y-yellow-500 border-l-yellow-500 border-r-yellow-200"></div>
-              Processing data [{countProcess}/{data.length}]
-            </>
-          ) : (
-            <>
-              <i className="fa-solid fa-upload mr-2"></i>
-              Add Data
-            </>
-          )}
-        </label>
+        {(isLoading || newData.length === 0) && (
+          <label
+            className={`flex items-center gap-2 text-white ${
+              isLoading
+                ? "font-normal bg-slate-600"
+                : "font-semibold cursor-pointer bg-blue-700 hover:bg-blue-900"
+            } py-2 px-4 rounded`}
+            htmlFor="addData"
+          >
+            {isLoading ? (
+              <>
+                <div className="animate-spin rounded-full h-6 w-6 border-4 border-y-yellow-500 border-l-yellow-500 border-r-yellow-200"></div>
+                Processing data [{countProcess}/{data.length}]
+              </>
+            ) : (
+              <>
+                <i className="fa-solid fa-upload mr-2"></i>
+                Add Data
+              </>
+            )}
+          </label>
+        )}
 
         {data.length > 0 && !isLoading && (
           <button
@@ -297,12 +357,16 @@ const Input: React.FC = () => {
                     ? "bg-gradient-to-r from-blue-300 to bg-slate-100"
                     : "bg-gradient-to-r from-blue-400 to bg-slate-200"
                 } px-3 py-1 ${
-                  newData.length == index && isLoading
-                    ? "text-red-500 font-medium"
+                  countProcess - 1 == index && isLoading
+                    ? "text-slate-800 text-opacity-50 font-medium"
                     : ""
-                } ${newData.length > index ? "text-black font-medium" : ""} ${
-                  newData.length < index ? "text-white" : ""
-                }`}
+                } ${
+                  indexSuccess.includes(index) ? "text-black font-medium" : ""
+                } ${
+                  !indexSuccess.includes(index)
+                    ? "text-red-600 font-medium"
+                    : ""
+                } ${countProcess - 1 < index ? "text-white" : ""}`}
               >
                 {row.start}
               </div>
@@ -310,12 +374,16 @@ const Input: React.FC = () => {
                 className={`col-span-2 text-center px-3 py-1 ${
                   index % 2 !== 0 ? "bg-slate-100" : "bg-slate-200"
                 } ${
-                  newData.length == index && isLoading
-                    ? "text-red-500 font-medium"
+                  countProcess - 1 == index && isLoading
+                    ? "text-slate-800 text-opacity-50 font-medium"
                     : ""
-                } ${newData.length > index ? "text-black font-medium" : ""} ${
-                  newData.length < index ? "text-white" : ""
-                }`}
+                } ${
+                  indexSuccess.includes(index) ? "text-black font-medium" : ""
+                } ${
+                  !indexSuccess.includes(index)
+                    ? "text-red-600 font-medium"
+                    : ""
+                } ${countProcess - 1 < index ? "text-white" : ""}`}
               >
                 <i className="fa-solid fa-arrow-right-long" />
               </div>
@@ -325,12 +393,16 @@ const Input: React.FC = () => {
                     ? "bg-gradient-to-l from-emerald-300 to bg-slate-100"
                     : "bg-gradient-to-l from-emerald-400 to bg-slate-200"
                 } px-3 py-1 ${
-                  newData.length == index && isLoading
-                    ? "text-red-500 font-medium"
+                  countProcess - 1 == index && isLoading
+                    ? "text-slate-800 text-opacity-50 font-medium"
                     : ""
-                } ${newData.length > index ? "text-black font-medium" : ""} ${
-                  newData.length < index ? "text-white" : ""
-                }`}
+                } ${
+                  indexSuccess.includes(index) ? "text-black font-medium" : ""
+                } ${
+                  !indexSuccess.includes(index)
+                    ? "text-red-600 font-medium"
+                    : ""
+                } ${countProcess - 1 < index ? "text-white" : ""}`}
               >
                 {row.finish}
               </div>
@@ -348,12 +420,16 @@ const Input: React.FC = () => {
                     ? "bg-gradient-to-r from-blue-300 to bg-slate-100"
                     : "bg-gradient-to-r from-blue-400 to bg-slate-200"
                 } ${
-                  newData.length == index && isLoading
-                    ? "text-red-500 font-medium"
+                  countProcess - 1 == index && isLoading
+                    ? "text-slate-800 text-opacity-50 font-medium"
                     : ""
-                } ${newData.length > index ? "text-black font-medium" : ""} ${
-                  newData.length < index ? "text-white" : ""
-                }`}
+                } ${
+                  indexSuccess.includes(index) ? "text-black font-medium" : ""
+                } ${
+                  !indexSuccess.includes(index)
+                    ? "text-red-600 font-medium"
+                    : ""
+                } ${countProcess - 1 < index ? "text-white" : ""}`}
               >
                 {row.start}
               </div>
@@ -363,12 +439,16 @@ const Input: React.FC = () => {
                     ? "bg-slate-100"
                     : "bg-slate-200"
                 } ${
-                  newData.length == index && isLoading
-                    ? "text-red-500 font-medium"
+                  countProcess - 1 == index && isLoading
+                    ? "text-slate-800 text-opacity-50 font-medium"
                     : ""
-                } ${newData.length > index ? "text-black font-medium" : ""} ${
-                  newData.length < index ? "text-white" : ""
-                }`}
+                } ${
+                  indexSuccess.includes(index) ? "text-black font-medium" : ""
+                } ${
+                  !indexSuccess.includes(index)
+                    ? "text-red-600 font-medium"
+                    : ""
+                } ${countProcess - 1 < index ? "text-white" : ""}`}
               >
                 <i className="fa-solid fa-arrow-right-long" />
               </div>
@@ -378,12 +458,16 @@ const Input: React.FC = () => {
                     ? "bg-gradient-to-l from-emerald-300 to bg-slate-100"
                     : "bg-gradient-to-l from-emerald-400 to bg-slate-200"
                 } ${
-                  newData.length == index && isLoading
-                    ? "text-red-500 font-medium"
+                  countProcess - 1 == index && isLoading
+                    ? "text-slate-800 text-opacity-50 font-medium"
                     : ""
-                } ${newData.length > index ? "text-black font-medium" : ""} ${
-                  newData.length < index ? "text-white" : ""
-                }`}
+                } ${
+                  indexSuccess.includes(index) ? "text-black font-medium" : ""
+                } ${
+                  !indexSuccess.includes(index)
+                    ? "text-red-600 font-medium"
+                    : ""
+                } ${countProcess - 1 < index ? "text-white" : ""}`}
               >
                 {row.finish}
               </div>
@@ -457,15 +541,7 @@ const Input: React.FC = () => {
       {dataFail.length > 0 && (
         <>
           <div className="w-full flex justify-between items-center mt-10 mb-2">
-            <h1 className="text-2xl font-bold">
-              &raquo; Failed
-              <button
-                onClick={() => failedDataChecked()}
-                className="bg-red-300 hover:bg-red-400 font-semibold rounded-md py-1 px-2 scale-[0.7]"
-              >
-                <i className="fa-solid fa-rotate-right"></i>
-              </button>
-            </h1>
+            <h1 className="text-2xl font-bold">&raquo; Failed</h1>
 
             <button
               onClick={(event) => handleDownloadResult(event, "fail")}

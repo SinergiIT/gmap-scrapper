@@ -38,7 +38,7 @@ export default async function searchGoogleMaps(
     puppeteerExtra.use(stealthPlugin());
 
     browser = await puppeteerExtra.launch({
-      headless: false,
+      headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
     const page = await browser.newPage();
@@ -216,7 +216,7 @@ export default async function searchGoogleMaps(
 
 //     try {
 //       const distances = await getDistance(fromLocation, toLocation);
-//       res.status(200).json(distances);
+//       res.status(300).json(distances);
 //     } catch (error) {
 //       console.error("API error:", error);
 //       res.status(500).json({ error: "Failed to calculate distance" });
