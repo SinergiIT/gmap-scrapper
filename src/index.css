@@ -1,3 +1,16 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.raw-loading {
+  @apply bg-yellow-500 bg-opacity-50 text-slate-500 font-medium;
+}
+.raw-success {
+  @apply text-emerald-800 font-medium;
+}
+.raw-failed {
+  @apply text-red-600 font-medium;
+}
+.raw-waiting {
+  @apply text-slate-400;
+}

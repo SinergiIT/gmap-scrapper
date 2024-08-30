@@ -8,8 +8,8 @@ interface ExcelData {
 }
 
 type DistanceResult = {
-  distance: string;
-  duration: string;
+  distance: string | null;
+  duration: string | null;
 };
 
 interface Place {
@@ -56,6 +56,10 @@ const Input: React.FC = () => {
       return !isExist;
     });
   };
+  // Fungsi delay untuk memberikan jeda
+  const delay = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -84,92 +88,123 @@ const Input: React.FC = () => {
         setData(jsonData);
         console.log("jsonData :", jsonData);
         const inResult: Place[] = [];
+        const inFailedResult: ExcelData[] = [];
         const inSuccess: number[] = [];
         const inFailed: number[] = [];
+        const batchSize = 10; // Batch size untuk menentukan berapa data yang diproses sekaligus
+        let index = 0;
 
-        for (const [index, item] of jsonData.entries()) {
-          try {
-            // Check if the operation was aborted
-            if (abortController.signal.aborted) {
-              console.log("Operation aborted");
-              // setIsLoading(false);
-              setIsAborted(true);
-              return;
+        // Looping untuk memproses data dalam batch
+        while (index < jsonData.length) {
+          // Ambil batch data sebanyak batchSize
+          const batch = jsonData.slice(index, index + batchSize);
+
+          for (const [innerIndex, item] of batch.entries()) {
+            try {
+              // Check if the operation was aborted
+              if (abortController.signal.aborted) {
+                console.log("Operation aborted");
+                setIsAborted(true);
+                return;
+              }
+
+              // Await each scraping process with abort signal consideration
+              await new Promise<void>((resolve, reject) => {
+                setCountProcess((prevCount) => prevCount + 1);
+                window.ipcRenderer.once("scraping-done", (event, result) => {
+                  console.log(`Item ${index + innerIndex} processed:`, result);
+                  console.log("Result newData: ", inResult);
+                  inSuccess.push(index + innerIndex);
+
+                  // Ambil elemen terakhir dari inResult
+                  const lastItem = inResult[inResult.length - 1];
+
+                  // Cek apakah result berbeda dengan elemen terakhir di inResult
+                  const isDifferent =
+                    !lastItem ||
+                    (lastItem.start !== result.start &&
+                      lastItem.finish !== result.finish);
+
+                  const isFound =
+                    result.carDistance.distance &&
+                    result.carDistance.duration &&
+                    result.motorDistance.distance &&
+                    result.motorDistance.duration;
+
+                  // Jika berbeda, tambahkan result ke inResult
+                  if (isDifferent) {
+                    console.log("Memasukkan data baru");
+                    setInnerIndex((prevIndex) => prevIndex + 1);
+                    console.log("data baru dalam isFound");
+                    inResult.push(result);
+                    if (isFound) {
+                      setIndexSuccess((prevIndex) => [
+                        ...prevIndex,
+                        inSuccess[inSuccess.length - 1],
+                      ]);
+                      setNewData((prevData) => [...prevData, result]);
+                    }
+                  }
+
+                  console.log(event);
+                  resolve();
+                });
+
+                window.ipcRenderer.once(
+                  "scraping-error",
+                  (event, arg, error) => {
+                    console.error(
+                      `Error processing item ${index + innerIndex}:`,
+                      arg,
+                      error
+                    );
+                    console.log(event);
+                    inFailed.push(index + innerIndex);
+
+                    const lastItem = inFailedResult[inFailedResult.length - 1];
+
+                    const isDifferent =
+                      !lastItem ||
+                      (lastItem.start !== arg.start &&
+                        lastItem.finish !== arg.finish);
+
+                    if (isDifferent) {
+                      inFailedResult.push(arg);
+                      setInnerIndex((prevIndex) => prevIndex + 1);
+                      setIndexFailed((prevIndex) => [
+                        ...prevIndex,
+                        inFailed[inFailed.length - 1],
+                      ]);
+                    }
+                    reject(arg);
+                  }
+                );
+
+                window.ipcRenderer.send("start-scraping", item);
+
+                // Listen to the abort signal
+                abortController.signal.addEventListener("abort", () => {
+                  reject(new DOMException("AbortError"));
+                });
+              });
+
+              console.log("newData Loop :", newData);
+            } catch (error) {
+              console.error(
+                `Error processing item ${index + innerIndex}:`,
+                error
+              );
             }
-
-            // Await each scraping process with abort signal consideration
-            await new Promise<void>((resolve, reject) => {
-              setCountProcess((prevCount) => prevCount + 1);
-              window.ipcRenderer.once("scraping-done", (event, result) => {
-                console.log(`Item ${index} processed:`, result);
-                console.log("Result newData: ", inResult);
-                inSuccess.push(...inSuccess, index);
-
-                // Ambil elemen terakhir dari inResult
-                const lastItem = inResult[inResult.length - 1];
-
-                // Cek apakah result berbeda dengan elemen terakhir di inResult
-                const isDifferent =
-                  !lastItem ||
-                  (lastItem.start !== result.start &&
-                    lastItem.finish !== result.finish &&
-                    lastItem.coordStart !== result.coordStart &&
-                    lastItem.coordFinish !== result.coordFinish &&
-                    lastItem.nameStart !== result.nameStart &&
-                    lastItem.nameFinish !== result.nameFinish &&
-                    lastItem.carDistance.distance !==
-                      result.carDistance.distance &&
-                    lastItem.motorDistance.distance !==
-                      result.motorDistance.distance &&
-                    lastItem.carDistance.duration !==
-                      result.carDistance.duration &&
-                    lastItem.motorDistance.duration !==
-                      result.motorDistance.duration);
-
-                // Jika berbeda, tambahkan result ke inResult
-                if (isDifferent) {
-                  console.log("Memasukkan data baru");
-                  inResult.push(result);
-                  setNewData((prevData) => [...prevData, result]);
-                  setInnerIndex((prevIndex) => prevIndex + 1);
-                  setIndexSuccess((prevIndex) => [
-                    ...prevIndex,
-                    inSuccess[inSuccess.length - 1],
-                  ]);
-                }
-
-                console.log(event);
-                resolve();
-              });
-
-              window.ipcRenderer.once("scraping-error", (event, error) => {
-                console.error(`Error processing item ${index}:`, error);
-                setInnerIndex((prevIndex) => prevIndex + 1);
-                console.log(event);
-                inFailed.push(...inFailed, index);
-                setIndexFailed((prevIndex) => [
-                  ...prevIndex,
-                  inFailed[inFailed.length - 1],
-                ]);
-                reject(error);
-              });
-
-              window.ipcRenderer.send("start-scraping", item);
-
-              // Listen to the abort signal
-              abortController.signal.addEventListener("abort", () => {
-                reject(new DOMException("AbortError"));
-              });
-            });
-
-            console.log("newData Loop :", newData);
-          } catch (error) {
-            console.error(`Error processing item ${index}:`, error);
-          } finally {
-            event.target.value = "";
           }
+
+          // Berikan jeda selama 1 detik setelah setiap batch
+          await delay(1000);
+
+          // Update index untuk melanjutkan ke batch berikutnya
+          index += batchSize;
         }
 
+        // Reset inResult setelah semua proses selesai
         inResult.length = 0;
 
         console.log("newData Final:", newData);
@@ -197,7 +232,7 @@ const Input: React.FC = () => {
       const failed: ExcelData[] = failedDataChecked();
       setDataFail(failed);
     }
-  }, [isAborted, countProcess, innerIndex]);
+  }, [isAborted, countProcess, innerIndex, isLoading]);
 
   console.log("newData Out:", newData);
   console.log("Aborted Out:", isAborted);
@@ -353,56 +388,40 @@ const Input: React.FC = () => {
             <div key={index} className="grid grid-cols-12">
               <div
                 className={`col-span-5 text-start ${
-                  index % 2 !== 0
-                    ? "bg-gradient-to-r from-blue-300 to bg-slate-100"
-                    : "bg-gradient-to-r from-blue-400 to bg-slate-200"
+                  index % 2 !== 0 ? "bg-slate-50" : "bg-slate-100"
                 } px-3 py-1 ${
-                  countProcess - 1 == index && isLoading
-                    ? "text-slate-800 text-opacity-50 font-medium"
-                    : ""
-                } ${
-                  indexSuccess.includes(index) ? "text-black font-medium" : ""
-                } ${
-                  !indexSuccess.includes(index)
-                    ? "text-red-600 font-medium"
-                    : ""
-                } ${countProcess - 1 < index ? "text-white" : ""}`}
+                  countProcess - 1 == index && isLoading && "raw-loading"
+                } ${indexSuccess.includes(index) && "raw-success"} ${
+                  !indexSuccess.includes(index) &&
+                  index < (isLoading ? countProcess - 1 : countProcess) &&
+                  "raw-failed"
+                } ${countProcess - 1 < index && "raw-waiting"}`}
               >
                 {row.start}
               </div>
               <div
                 className={`col-span-2 text-center px-3 py-1 ${
-                  index % 2 !== 0 ? "bg-slate-100" : "bg-slate-200"
+                  index % 2 !== 0 ? "bg-slate-50" : "bg-slate-100"
+                } ${countProcess - 1 == index && isLoading && "raw-loading"} ${
+                  indexSuccess.includes(index) && "raw-success"
                 } ${
-                  countProcess - 1 == index && isLoading
-                    ? "text-slate-800 text-opacity-50 font-medium"
-                    : ""
-                } ${
-                  indexSuccess.includes(index) ? "text-black font-medium" : ""
-                } ${
-                  !indexSuccess.includes(index)
-                    ? "text-red-600 font-medium"
-                    : ""
-                } ${countProcess - 1 < index ? "text-white" : ""}`}
+                  !indexSuccess.includes(index) &&
+                  index < (isLoading ? countProcess - 1 : countProcess) &&
+                  "raw-failed"
+                } ${countProcess - 1 < index && "raw-waiting"}`}
               >
                 <i className="fa-solid fa-arrow-right-long" />
               </div>
               <div
                 className={`col-span-5 text-right ${
-                  index % 2 !== 0
-                    ? "bg-gradient-to-l from-emerald-300 to bg-slate-100"
-                    : "bg-gradient-to-l from-emerald-400 to bg-slate-200"
+                  index % 2 !== 0 ? "bg-slate-50" : "bg-slate-100"
                 } px-3 py-1 ${
-                  countProcess - 1 == index && isLoading
-                    ? "text-slate-800 text-opacity-50 font-medium"
-                    : ""
-                } ${
-                  indexSuccess.includes(index) ? "text-black font-medium" : ""
-                } ${
-                  !indexSuccess.includes(index)
-                    ? "text-red-600 font-medium"
-                    : ""
-                } ${countProcess - 1 < index ? "text-white" : ""}`}
+                  countProcess - 1 == index && isLoading && "raw-loading"
+                } ${indexSuccess.includes(index) && "raw-success"} ${
+                  !indexSuccess.includes(index) &&
+                  index < (isLoading ? countProcess - 1 : countProcess) &&
+                  "raw-failed"
+                } ${countProcess - 1 < index && "raw-waiting"}`}
               >
                 {row.finish}
               </div>
@@ -417,57 +436,45 @@ const Input: React.FC = () => {
               <div
                 className={`w-[45%] px-2 py-1 text-left ${
                   index % 4 === 2 || index % 4 === 3
-                    ? "bg-gradient-to-r from-blue-300 to bg-slate-100"
-                    : "bg-gradient-to-r from-blue-400 to bg-slate-200"
+                    ? "bg-slate-50"
+                    : "bg-slate-100"
+                } ${countProcess - 1 == index && isLoading && "raw-loading"} ${
+                  indexSuccess.includes(index) && "raw-success"
                 } ${
-                  countProcess - 1 == index && isLoading
-                    ? "text-slate-800 text-opacity-50 font-medium"
-                    : ""
-                } ${
-                  indexSuccess.includes(index) ? "text-black font-medium" : ""
-                } ${
-                  !indexSuccess.includes(index)
-                    ? "text-red-600 font-medium"
-                    : ""
-                } ${countProcess - 1 < index ? "text-white" : ""}`}
+                  !indexSuccess.includes(index) &&
+                  index < (isLoading ? countProcess - 1 : countProcess) &&
+                  "raw-failed"
+                } ${countProcess - 1 < index && "raw-waiting"}`}
               >
                 {row.start}
               </div>
               <div
                 className={`w-[10%] px-2 py-1 text-center ${
                   index % 4 === 2 || index % 4 === 3
-                    ? "bg-slate-100"
-                    : "bg-slate-200"
+                    ? "bg-slate-50"
+                    : "bg-slate-100"
+                } ${countProcess - 1 == index && isLoading && "raw-loading"} ${
+                  indexSuccess.includes(index) && "raw-success"
                 } ${
-                  countProcess - 1 == index && isLoading
-                    ? "text-slate-800 text-opacity-50 font-medium"
-                    : ""
-                } ${
-                  indexSuccess.includes(index) ? "text-black font-medium" : ""
-                } ${
-                  !indexSuccess.includes(index)
-                    ? "text-red-600 font-medium"
-                    : ""
-                } ${countProcess - 1 < index ? "text-white" : ""}`}
+                  !indexSuccess.includes(index) &&
+                  index < (isLoading ? countProcess - 1 : countProcess) &&
+                  "raw-failed"
+                } ${countProcess - 1 < index && "raw-waiting"}`}
               >
                 <i className="fa-solid fa-arrow-right-long" />
               </div>
               <div
                 className={`w-[45%] px-2 py-1 text-right ${
                   index % 4 === 2 || index % 4 === 3
-                    ? "bg-gradient-to-l from-emerald-300 to bg-slate-100"
-                    : "bg-gradient-to-l from-emerald-400 to bg-slate-200"
+                    ? "bg-slate-50"
+                    : "bg-slate-100"
+                } ${countProcess - 1 == index && isLoading && "raw-loading"} ${
+                  indexSuccess.includes(index) && "raw-success"
                 } ${
-                  countProcess - 1 == index && isLoading
-                    ? "text-slate-800 text-opacity-50 font-medium"
-                    : ""
-                } ${
-                  indexSuccess.includes(index) ? "text-black font-medium" : ""
-                } ${
-                  !indexSuccess.includes(index)
-                    ? "text-red-600 font-medium"
-                    : ""
-                } ${countProcess - 1 < index ? "text-white" : ""}`}
+                  !indexSuccess.includes(index) &&
+                  index < (isLoading ? countProcess - 1 : countProcess) &&
+                  "raw-failed"
+                } ${countProcess - 1 < index && "raw-waiting"}`}
               >
                 {row.finish}
               </div>
@@ -500,6 +507,7 @@ const Input: React.FC = () => {
           </div>
           {newData.map((item, index) => (
             <div
+              key={index}
               className={`${
                 index % 2 !== 0 ? "bg-slate-200" : "bg-slate-50"
               } w-full grid grid-cols-12 text-center text-xs md:text-sm xl:text-base px-2`}
@@ -557,6 +565,7 @@ const Input: React.FC = () => {
           </div>
           {dataFail.map((item, index) => (
             <div
+              key={index}
               className={`${
                 index % 2 !== 0 ? "bg-red-100" : "bg-red-50"
               } w-full grid grid-cols-11 text-center text-xs md:text-sm xl:text-base px-2`}

@@ -55,6 +55,6 @@ ipcMain.on("start-scraping", async (event, arg) => {
     const results = await searchGoogleMaps(arg.start, arg.finish);
     event.reply("scraping-done", results);
   } catch (error) {
-    event.reply("scraping-error", error);
+    event.reply("scraping-error", arg, error);
   }
 });

@@ -2,8 +2,8 @@ import puppeteerExtra from "puppeteer-extra";
 import stealthPlugin from "puppeteer-extra-plugin-stealth";
 
 type DistanceResult = {
-  distance: string;
-  duration: string;
+  distance: string | null;
+  duration: string | null;
 };
 
 type TravelData = {
@@ -52,7 +52,7 @@ export default async function searchGoogleMaps(
     await page.click("button#searchbox-searchbutton");
     await page.waitForNavigation({ waitUntil: "networkidle2" });
     // Memeriksa apakah tombol 'Rute' ada
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     const tombolRute1 = await page.evaluate(() => {
       return !!document.querySelector('button[data-value="Rute"]');
@@ -89,7 +89,7 @@ export default async function searchGoogleMaps(
       await page.keyboard.press("Enter");
       await page.waitForNavigation({ waitUntil: "networkidle2" });
 
-      await new Promise((resolve) => setTimeout(resolve, 2500));
+      await new Promise((resolve) => setTimeout(resolve, 3000));
 
       // Memeriksa apakah tombol 'Rute' ada
       const tombolRute = await page.evaluate(() => {
@@ -114,7 +114,7 @@ export default async function searchGoogleMaps(
       return document.querySelector("h1")?.innerText;
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
     // Klik tombol Directions (Rute)
     if (coordStart && coordFinish) {
       await page.waitForSelector('button[data-value="Rute"]');
@@ -127,7 +127,7 @@ export default async function searchGoogleMaps(
       // Ambil jarak untuk kendaraan mobil
       await page.click('div[data-travel_mode="0"] > button');
       await page.waitForSelector('div[data-trip-index="0"]', {
-        timeout: 4000,
+        timeout: 3000,
       });
 
       const carDistance = await page.evaluate(() => {
@@ -144,18 +144,18 @@ export default async function searchGoogleMaps(
           };
         }
         return {
-          distance: "data tidak ditemukan",
-          duration: "data tidak ditemukan",
+          distance: null,
+          duration: null,
         };
       });
 
       // Ambil jarak untuk kendaraan motor
       await page.click('div[data-travel_mode="9"] > button');
       await page.waitForSelector('div[data-trip-index="0"]', {
-        timeout: 4000,
+        timeout: 3000,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 2500));
+      await new Promise((resolve) => setTimeout(resolve, 3000));
 
       const motorDistance = await page.evaluate(() => {
         const jarak = document.querySelector(
@@ -171,8 +171,8 @@ export default async function searchGoogleMaps(
           };
         }
         return {
-          distance: "data tidak ditemukan",
-          duration: "data tidak ditemukan",
+          distance: null,
+          duration: null,
         };
       });
 
