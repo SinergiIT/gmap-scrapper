@@ -46,7 +46,7 @@ const Input: React.FC = () => {
   const [isAborted, setIsAborted] = useState<boolean>(false);
   const [innerIndex, setInnerIndex] = useState<number>(0);
   const [indexSuccess, setIndexSuccess] = useState<number[]>([]);
-  const [indexFailed, setIndexFailed] = useState<number[]>([]);
+  // const [indexFailed, setIndexFailed] = useState<number[]>([]);
 
   const failedDataChecked = (): ExcelData[] => {
     return data.filter((item) => {
@@ -67,6 +67,7 @@ const Input: React.FC = () => {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
+    localStorage.clear();
     setData([]);
     setNewData([]);
     setDataFail([]);
@@ -86,6 +87,8 @@ const Input: React.FC = () => {
         const jsonData: ExcelData[] = XLSX.utils.sheet_to_json(worksheet);
 
         setData(jsonData);
+        localStorage.setItem("data", JSON.stringify(jsonData));
+
         console.log("jsonData :", jsonData);
         const inResult: Place[] = [];
         const inFailedResult: ExcelData[] = [];
@@ -143,6 +146,13 @@ const Input: React.FC = () => {
                         inSuccess[inSuccess.length - 1],
                       ]);
                       setNewData((prevData) => [...prevData, result]);
+                      const dataLS = JSON.parse(
+                        localStorage.getItem("newData") || "[]"
+                      );
+                      localStorage.setItem(
+                        "newData",
+                        JSON.stringify([...dataLS, result])
+                      );
                     }
                   }
 
@@ -171,10 +181,10 @@ const Input: React.FC = () => {
                     if (isDifferent) {
                       inFailedResult.push(arg);
                       setInnerIndex((prevIndex) => prevIndex + 1);
-                      setIndexFailed((prevIndex) => [
-                        ...prevIndex,
-                        inFailed[inFailed.length - 1],
-                      ]);
+                      // setIndexFailed((prevIndex) => [
+                      //   ...prevIndex,
+                      //   inFailed[inFailed.length - 1],
+                      // ]);
                     }
                     reject(arg);
                   }
@@ -219,20 +229,40 @@ const Input: React.FC = () => {
   const handleAbort = () => {
     abortControllerRef.current?.abort(); // Trigger the abort signal
   };
+
   console.log(countProcess, innerIndex);
+
   useEffect(() => {
+    if (data.length === 0) {
+      // Mendapatkan data dari localStorage dan mengatur state dengan setData
+      const savedData = JSON.parse(localStorage.getItem("data") || "[]");
+      setData(savedData);
+    }
+
+    if (dataFail?.length === 0) {
+      const savedData = JSON.parse(localStorage.getItem("dataFail;") || "[]");
+      setDataFail(savedData);
+    }
+
+    if (newData?.length === 0) {
+      const savedData = JSON.parse(localStorage.getItem("newData") || "[]");
+      setNewData(savedData);
+    }
+
     if (isAborted && countProcess === innerIndex) {
       console.log("SELESAI");
       setIsLoading(false);
       setIsAborted(false);
       const failed: ExcelData[] = failedDataChecked();
       setDataFail(failed);
+      localStorage.setItem("dataFail;", JSON.stringify(failed));
     }
     if (!isLoading) {
       const failed: ExcelData[] = failedDataChecked();
       setDataFail(failed);
+      localStorage.setItem("dataFail;", JSON.stringify(failed));
     }
-  }, [isAborted, countProcess, innerIndex, isLoading]);
+  }, [isAborted, countProcess, innerIndex, isLoading, data, dataFail, newData]);
 
   console.log("newData Out:", newData);
   console.log("Aborted Out:", isAborted);
@@ -299,10 +329,8 @@ const Input: React.FC = () => {
 
   const handleReload = () => {
     window.location.reload();
+    localStorage.clear();
   };
-
-  console.log("indexSuccess: ", indexSuccess);
-  console.log("indexFailed: ", indexFailed);
 
   return (
     <div
