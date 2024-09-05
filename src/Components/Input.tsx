@@ -262,7 +262,7 @@ const Input: React.FC = () => {
       setDataFail(failed);
       localStorage.setItem("dataFail;", JSON.stringify(failed));
     }
-  }, [isAborted, countProcess, innerIndex, isLoading, data, dataFail, newData]);
+  }, [isAborted, countProcess, innerIndex, isLoading]);
 
   console.log("newData Out:", newData);
   console.log("Aborted Out:", isAborted);
